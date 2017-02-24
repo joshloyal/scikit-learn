@@ -19,13 +19,16 @@ def configuration(parent_package="", top_path=None):
     cblas_libs, blas_info = get_blas_info()
     eca = blas_info.pop('extra_compile_args', [])
     eca.append("-O4")
+    eca.append('-fopenmp')
     config.add_extension("_barnes_hut_tsne",
                          libraries=cblas_libs,
                          sources=["_barnes_hut_tsne.pyx"],
                          include_dirs=[join('..', 'src', 'cblas'),
                                        numpy.get_include(),
                                        blas_info.pop('include_dirs', [])],
-                         extra_compile_args=eca, **blas_info)
+                         extra_compile_args=eca,
+                         extra_link_args=['-fopenmp', '-O3'],
+                         **blas_info)
 
     config.add_subpackage('tests')
 

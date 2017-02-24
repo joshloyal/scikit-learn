@@ -17,6 +17,7 @@ from ..neighbors import BallTree
 from ..base import BaseEstimator
 from ..utils import check_array
 from ..utils import check_random_state
+from ..utils import _get_n_jobs, gen_even_slices
 from ..utils.extmath import _ravel
 from ..decomposition import PCA
 from ..metrics.pairwise import pairwise_distances
@@ -25,6 +26,7 @@ from . import _barnes_hut_tsne
 from ..utils.fixes import astype
 from ..externals.six import string_types
 from ..utils import deprecated
+from ..externals.joblib import Parallel, delayed
 
 
 MACHINE_EPSILON = np.finfo(np.double).eps
@@ -652,7 +654,8 @@ class TSNE(BaseEstimator):
                  early_exaggeration=4.0, learning_rate=1000.0, n_iter=1000,
                  n_iter_without_progress=30, min_grad_norm=1e-7,
                  metric="euclidean", init="random", verbose=0,
-                 random_state=None, method='barnes_hut', angle=0.5):
+                 random_state=None, method='barnes_hut', angle=0.5,
+                 n_jobs=1):
         if not ((isinstance(init, string_types) and
                 init in ["pca", "random"]) or
                 isinstance(init, np.ndarray)):
@@ -671,6 +674,7 @@ class TSNE(BaseEstimator):
         self.random_state = random_state
         self.method = method
         self.angle = angle
+        self.n_jobs = n_jobs
 
     def _fit(self, X, skip_num_points=0):
         """Fit the model using X as training data.
@@ -728,6 +732,7 @@ class TSNE(BaseEstimator):
             if self.verbose:
                 print("[t-SNE] Computing pairwise distances...")
 
+            n_jobs = _get_n_jobs(self.n_jobs)
             if self.metric == "euclidean":
                 distances = pairwise_distances(X, metric=self.metric,
                                                squared=True)
@@ -763,8 +768,13 @@ class TSNE(BaseEstimator):
                 # And we add one to not count the data point itself
                 # In the event that we have very small # of points
                 # set the neighbors to n - 1
-                distances_nn, neighbors_nn = bt.query(X, k=k + 1)
-                neighbors_nn = neighbors_nn[:, 1:]
+                result = Parallel(n_jobs, backend='threading')(
+                    delayed(bt.query, check_pickle=False)(X[batch])
+                    for batch in gen_even_slices(X.shape[0], n_jobs))
+                distances_nn, neighbors_nn = tuple(zip(*result))
+                distances_nn, neighbors_nn = (np.vstack(distances_nn),
+                                              np.vstack(neighbors_nn))
+
             P = _joint_probabilities_nn(distances, neighbors_nn,
                                         self.perplexity, self.verbose)
         else:

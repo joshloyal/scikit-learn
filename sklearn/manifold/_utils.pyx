@@ -3,6 +3,8 @@ cimport cython
 import numpy as np
 cimport numpy as np
 from libc.stdio cimport printf
+from cython.parallel import prange
+
 cdef extern from "numpy/npy_math.h":
     float NPY_INFINITY
 
@@ -12,12 +14,12 @@ cdef float PERPLEXITY_TOLERANCE = 1e-5
 
 @cython.boundscheck(False)
 cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
-        np.ndarray[np.float32_t, ndim=2] affinities, 
-        np.ndarray[np.int64_t, ndim=2] neighbors, 
+        np.ndarray[np.float32_t, ndim=2] affinities,
+        np.ndarray[np.int64_t, ndim=2] neighbors,
         float desired_perplexity,
         int verbose):
-    """Binary search for sigmas of conditional Gaussians. 
-    
+    """Binary search for sigmas of conditional Gaussians.
+
     This approximation reduces the computational complexity from O(N^2) to
     O(uN). See the exact method '_binary_search_perplexity' for more details.
 
@@ -69,7 +71,7 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
     if using_neighbors:
         K = neighbors.shape[1]
 
-    for i in range(n_samples):
+    for i in prange(n_samples, nogil=True):
         beta_min = -NPY_INFINITY
         beta_max = NPY_INFINITY
         beta = 1.0
@@ -102,11 +104,11 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
                 for k in range(K):
                     j = neighbors[i, k]
                     P[i, j] /= sum_Pi
-                    sum_disti_Pi += affinities[i, j] * P[i, j]
+                    sum_disti_Pi = sum_disti_Pi +  affinities[i, j] * P[i, j]
             else:
                 for j in range(K):
                     P[i, j] /= sum_Pi
-                    sum_disti_Pi += affinities[i, j] * P[i, j]
+                    sum_disti_Pi = sum_disti_Pi + affinities[i, j] * P[i, j]
             entropy = math.log(sum_Pi) + beta * sum_disti_Pi
             entropy_diff = entropy - desired_entropy
 
@@ -128,9 +130,9 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
 
         beta_sum += beta
 
-        if verbose and ((i + 1) % 1000 == 0 or i + 1 == n_samples):
-            print("[t-SNE] Computed conditional probabilities for sample "
-                  "%d / %d" % (i + 1, n_samples))
+        #if verbose and ((i + 1) % 1000 == 0 or i + 1 == n_samples):
+        #    print("[t-SNE] Computed conditional probabilities for sample "
+        #          "%d / %d" % (i + 1, n_samples))
 
     if verbose:
         print("[t-SNE] Mean sigma: %f"
